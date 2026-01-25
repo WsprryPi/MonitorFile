@@ -6,9 +6,9 @@ MonitorFile is a lightweight **C++ header-only library** for monitoring file cha
 
 ## 🚀 Features
 
-- **Minimal dependencies** – Uses standard C++17 `<filesystem>`.
+- **Minimal dependencies** – Uses standard C++20 `<filesystem>`.
 - **Exception-safe** – Handles missing or deleted files gracefully.
-- **Cross-platform** – Works on **Linux**, **macOS**, and **Windows** (C++17 required).
+- **Cross-platform** – Works on **Linux**, **macOS**, and **Windows** (C++20 required).
 
 ---
 

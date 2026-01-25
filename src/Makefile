@@ -65,7 +65,7 @@ MAKEFLAGS := -j$(nproc)
 # Common flags for both C and C++ compilers
 COMMON_FLAGS := -Wall -Werror -fmax-errors=10 -MMD -MP
 # C++ Flags
-COMM_CXX_FLAGS := -Wno-psabi -lstdc++fs -std=c++17
+COMM_CXX_FLAGS := -Wno-psabi -lstdc++fs -std=c++20
 CXXFLAGS := $(COMMON_FLAGS) $(COMM_CXX_FLAGS)
 # Include paths for libraries
 CXXFLAGS += -I$(abspath ./INI-Handler/src)
@@ -161,7 +161,7 @@ macros:
 .PHONY: lint
 lint:
 	$(Q)echo "Running static analysis with cppcheck."
-	$(Q)cppcheck --platform=unix32 --std=c++17 --enable=all --inconclusive --force --inline-suppr --quiet $(CPP_SOURCES)
+	$(Q)cppcheck --platform=unix32 --std=c+20 --enable=all --inconclusive --force --inline-suppr --quiet $(CPP_SOURCES)
 
 # Display available make targets
 .PHONY: help
