@@ -31,7 +31,7 @@ MonitorFile/
 To test the functionality, clone the repository and compile the test program:
 
 ```bash
-git clone https://github.com/lbussy/MonitorFile.git
+git clone https://github.com/WsprryPi/MonitorFile.git
 cd MonitorFile/src
 make test
 ```
