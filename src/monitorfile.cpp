@@ -40,35 +40,42 @@ MonitorFile::~MonitorFile()
  * @return MonitorState::MONITORING if monitoring starts successfully,
  *         MonitorState::FILE_NOT_FOUND if the file does not exist.
  */
-MonitorState MonitorFile::filemon(const std::string &fileName, std::function<void()> cb)
+MonitorState MonitorFile::filemon(
+    const std::string &fileName,
+    std::function<void()> cb)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
 
     if (monitoring_thread.joinable())
     {
+        lock.unlock();
         stop();
-    }
-
-    if (!fs::exists(fileName))
-    {
-        monitoring_state.store(MonitorState::FILE_NOT_FOUND);
-        return MonitorState::FILE_NOT_FOUND;
+        lock.lock();
     }
 
     file_name = fileName;
-    org_time = fs::last_write_time(file_name);
     stable_checks = 0;
-    monitoring_state.store(MonitorState::MONITORING);
 
     if (cb)
     {
         callback = std::move(cb);
     }
 
+    if (fs::exists(file_name))
+    {
+        org_time = fs::last_write_time(file_name);
+        monitoring_state.store(MonitorState::MONITORING);
+    }
+    else
+    {
+        org_time.reset();
+        monitoring_state.store(MonitorState::FILE_NOT_FOUND);
+    }
+
     stop_monitoring.store(false);
     monitoring_thread = std::thread(&MonitorFile::monitor_loop, this);
 
-    return MonitorState::MONITORING;
+    return monitoring_state.load();
 }
 
 /**
@@ -169,65 +176,91 @@ void MonitorFile::set_callback(std::function<void()> func)
 void MonitorFile::monitor_loop()
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
-    // Initialize last_reported_time so we never treat the very first timestamp
-    // as “new” when it's actually just our starting point.
-    fs::file_time_type last_reported_time = org_time.value();
 
-    // This flag tracks whether we've seen a write > org_time yet.
+    fs::file_time_type last_reported_time{};
+    bool have_reported_time = false;
     bool change_detected = false;
     stable_checks = 0;
 
+    if (org_time.has_value())
+    {
+        last_reported_time = org_time.value();
+        have_reported_time = true;
+    }
+
     while (!stop_monitoring.load())
     {
-        // wait_for returns true if predicate (stop) becomes true
         cv.wait_for(lock, polling_interval, [this] {
             return stop_monitoring.load();
         });
+
         if (stop_monitoring.load())
+        {
             return;
+        }
 
         if (!fs::exists(file_name))
         {
+            org_time.reset();
+            change_detected = false;
+            stable_checks = 0;
             monitoring_state.store(MonitorState::FILE_NOT_FOUND);
             continue;
         }
 
-        // release lock while we sleep to allow set_polling_interval / stop()
+        auto last_write = fs::last_write_time(file_name);
+
+        if (!org_time.has_value())
+        {
+            // File has appeared after being missing.
+            org_time = last_write;
+            last_reported_time = last_write;
+            have_reported_time = true;
+            change_detected = false;
+            stable_checks = 0;
+            monitoring_state.store(MonitorState::MONITORING);
+
+            if (callback)
+            {
+                lock.unlock();
+                callback();
+                lock.lock();
+            }
+
+            continue;
+        }
+
         lock.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         lock.lock();
 
-        auto last_write = fs::last_write_time(file_name);
+        last_write = fs::last_write_time(file_name);
 
         if (!change_detected)
         {
-            // Haven't seen any write > org_time yet
             if (last_write > org_time.value())
             {
                 change_detected = true;
                 org_time = last_write;
-                stable_checks = 0;      // start counting stability from here
+                stable_checks = 0;
             }
-            // ELSE: still no change — keep waiting
             continue;
         }
 
-        // Once we've detected a write, watch for stable intervals
         if (last_write > org_time.value())
         {
-            // file changed again before stabilizing
             org_time = last_write;
             stable_checks = 0;
         }
         else
         {
-            // file unchanged since last write
-            if (++stable_checks >= 3 && last_write != last_reported_time)
+            if (++stable_checks >= 3 &&
+                (!have_reported_time || last_write != last_reported_time))
             {
                 last_reported_time = last_write;
+                have_reported_time = true;
                 monitoring_state.store(MonitorState::FILE_CHANGED);
 
-                // invoke callback outside the lock
                 if (callback)
                 {
                     lock.unlock();
@@ -235,7 +268,6 @@ void MonitorFile::monitor_loop()
                     lock.lock();
                 }
 
-                // reset for the next change
                 monitoring_state.store(MonitorState::MONITORING);
                 stable_checks = 0;
                 change_detected = false;
