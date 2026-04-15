@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -129,6 +130,11 @@ private:
 
     std::string file_name;                      ///< Path of the file being monitored.
     std::optional<fs::file_time_type> org_time; ///< Last known modification timestamp.
+    std::optional<std::uintmax_t> org_size;     ///< Last known file size.
+#if defined(__linux__) || defined(__APPLE__)
+    std::optional<std::uintmax_t> org_device;   ///< Last known device id.
+    std::optional<std::uintmax_t> org_inode;    ///< Last known inode id.
+#endif
     std::thread monitoring_thread;              ///< Thread for running monitor loop.
     std::atomic<bool> stop_monitoring;          ///< Signals monitoring loop to terminate.
     std::chrono::milliseconds polling_interval; ///< Interval between file checks.
